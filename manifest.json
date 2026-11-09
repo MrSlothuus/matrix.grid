@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "slothuus.grid",
+  "name": "Grid",
+  "version": "1.0.0",
+  "author": "slothuus",
+  "license": "MIT",
+  "homepage": "https://github.com/MrSlothuus/omarchy-grid",
+  "description": "A cell-grid tiling layout for Omarchy: snap windows to an adjustable grid, drag a corner dot to resize, and control it all from a Grid panel in the bar.",
+  "kinds": ["bar-widget", "overlay"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "barWidget": "Panel.qml",
+    "overlay": "Overlay.qml"
+  },
+  "barWidget": {
+    "displayName": "Grid",
+    "description": "Grid layout controls in a dropdown: on/off, grid size, window sizes, tidy up, resize dots",
+    "category": "System",
+    "aliases": ["grid", "tiling", "layout", "cellgrid"],
+    "defaultSection": "left",
+    "allowMultiple": false
+  }
+}
