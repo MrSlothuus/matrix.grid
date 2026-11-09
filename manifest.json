@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "id": "slothuus.grid",
-  "name": "Grid",
-  "version": "1.0.0",
+  "id": "matrix.grid",
+  "name": "Matrix Grid",
+  "version": "1.1.0",
   "author": "slothuus",
   "license": "MIT",
-  "homepage": "https://github.com/MrSlothuus/omarchy-grid",
-  "description": "A cell-grid tiling layout for Omarchy: snap windows to an adjustable grid, drag a corner dot to resize, and control it all from a Grid panel in the bar.",
+  "homepage": "https://github.com/MrSlothuus/matrix.grid",
+  "description": "A cell-grid tiling layout for Omarchy with a Grid panel in the bar and corner resize dots, plus a matrix rain screensaver.",
   "kinds": ["bar-widget", "overlay"],
   "keepLoaded": true,
   "entryPoints": {
@@ -14,10 +14,10 @@
     "overlay": "Overlay.qml"
   },
   "barWidget": {
-    "displayName": "Grid",
-    "description": "Grid layout controls in a dropdown: on/off, grid size, window sizes, tidy up, resize dots",
+    "displayName": "Matrix Grid",
+    "description": "Grid layout controls in a dropdown: on/off, grid size, window sizes, tidy up, resize dots, and the matrix rain screensaver",
     "category": "System",
-    "aliases": ["grid", "tiling", "layout", "cellgrid"],
+    "aliases": ["grid", "tiling", "layout", "cellgrid", "matrix", "screensaver"],
     "defaultSection": "left",
     "allowMultiple": false
   }

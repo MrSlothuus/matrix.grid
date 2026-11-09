@@ -9,8 +9,8 @@ import qs.Ui
 // `hyprctl eval`, and cellgrid.lua saves the settings across reloads.
 Panel {
   id: root
-  moduleName: "slothuus.grid"
-  ipcTarget: "slothuus.grid"
+  moduleName: "matrix.grid"
+  ipcTarget: "matrix.grid"
   manageIpc: false
 
   property var grid: ({
@@ -24,6 +24,7 @@ Panel {
   readonly property var focused: gridOn ? grid.focused : null
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
+  readonly property string rainLauncher: Qt.resolvedUrl("screensaver/matrix-rain").toString().replace("file://", "")
   readonly property var presets: [
     { label: "1 × 1", w: 1, h: 1 },
     { label: "2 × 2", w: 2, h: 2 },
@@ -359,6 +360,22 @@ Panel {
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
             wrapMode: Text.WordWrap
+          }
+        }
+
+        // The screensaver works whether or not the grid layout is on.
+        PanelSeparator { width: parent.width; foreground: root.foreground }
+
+        Button {
+          width: parent.width
+          text: "Start matrix rain"
+          iconText: String.fromCodePoint(0xF0597)
+          leftAlign: true
+          bordered: true
+          tooltipText: "Play the matrix rain screensaver now; any key or mouse movement ends it"
+          onClicked: {
+            root.close()
+            Quickshell.execDetached([root.rainLauncher, "force"])
           }
         }
       }

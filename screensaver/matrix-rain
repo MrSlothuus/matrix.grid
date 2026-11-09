@@ -1,0 +1,71 @@
+#!/bin/bash
+
+# Play the matrix rain as a fullscreen screensaver on every monitor. It uses
+# Omarchy's screensaver app ID so idle tracking, notifications, fullscreen
+# rules, and locking treat it like the stock screensaver.
+# Usage: matrix-rain [force]   (force ignores Omarchy's screensaver-off toggle)
+set -euo pipefail
+
+here="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+video="$here/matrix-rain.mp4"
+runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$UID}/matrix-grid-screensaver"
+
+[[ -r $video ]] || { echo "Matrix rain video is missing: $video" >&2; exit 1; }
+[[ $(omarchy-shell lock isLocked 2>/dev/null) != true ]] || exit 0
+if [[ ${1:-} != force ]] && omarchy-toggle-enabled screensaver-off; then
+  exit 0
+fi
+
+mkdir -p -m 700 "$runtime_dir"
+exec 9>"$runtime_dir/instance.lock"
+flock -n 9 || exit 0
+
+players=()
+focus_watcher=""
+cleanup() {
+  trap - EXIT INT TERM HUP
+  if [[ -n $focus_watcher ]]; then
+    kill "$focus_watcher" 2>/dev/null || true
+    wait "$focus_watcher" 2>/dev/null || true
+  fi
+  if ((${#players[@]})); then
+    kill "${players[@]}" 2>/dev/null || true
+    wait "${players[@]}" 2>/dev/null || true
+  fi
+  rm -f "$runtime_dir"/player-*.sock
+}
+trap cleanup EXIT
+trap 'exit 0' INT TERM HUP
+
+mapfile -t monitors < <(hyprctl monitors -j | jq -r '.[].name')
+((${#monitors[@]})) || exit 1
+
+for index in "${!monitors[@]}"; do
+  mpv --no-config --load-scripts=no --no-terminal \
+    --vo=gpu --gpu-context=wayland --hwdec=auto-safe \
+    --wayland-app-id=org.omarchy.screensaver --title="Matrix Rain" \
+    --fullscreen --screen-name="${monitors[$index]}" --fs-screen-name="${monitors[$index]}" \
+    --loop-file=inf --audio=no --sub=no --panscan=1 \
+    --stop-screensaver=no --cursor-autohide=always \
+    --no-osc --osd-level=0 --input-terminal=no \
+    --input-default-bindings=no --input-builtin-bindings=no \
+    --script="$here/wake.lua" \
+    --input-ipc-server="$runtime_dir/player-$index.sock" \
+    -- "$video" 9>&- &
+  players+=("$!")
+done
+
+# A compositor shortcut may change focus without delivering a key to mpv.
+# Close all players when the user returns to an application this way.
+(
+  sleep 1
+  while hyprctl activewindow -j | jq -e '.class == "org.omarchy.screensaver"' >/dev/null; do
+    sleep 0.25
+  done
+  kill "${players[@]}" 2>/dev/null || true
+) 9>&- &
+focus_watcher=$!
+
+# Dismissing one monitor dismisses every monitor. The normal lock command also
+# terminates these players by their screensaver app ID.
+wait -n "${players[@]}" || true

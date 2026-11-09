@@ -1,5 +1,5 @@
 -- A cell-based tiling layout for Omarchy's Hyprland Lua configuration.
--- Part of https://github.com/MrSlothuus/omarchy-grid (MIT); install.sh links
+-- Part of https://github.com/MrSlothuus/matrix.grid (MIT); install.sh links
 -- this file to ~/.config/hypr/cellgrid.lua.
 -- These are defaults: the Grid panel in the bar changes them and saves its
 -- choices to settings_path, which wins on every reload.
@@ -548,7 +548,7 @@ local active_drag_token = nil
 
 local function preview_call(method, payload)
   hl.dispatch(hl.dsp.exec_cmd(
-    "omarchy-shell -q shell call slothuus.grid " .. method .. " '" .. payload .. "'"
+    "omarchy-shell -q shell call matrix.grid " .. method .. " '" .. payload .. "'"
   ))
 end
 
