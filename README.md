@@ -29,10 +29,10 @@ monitor.
     its size.
   - Show or hide the resize dots.
   - Start the matrix rain.
-- **Matrix rain screensaver.** A seamless 32-second 4K loop of blue digital
-  rain plays fullscreen on every monitor. Any key, click or mouse movement
-  ends it, and Omarchy's lock and idle handling treat it like the stock
-  screensaver.
+- **Matrix rain screensaver.** Blue digital rain is drawn fullscreen on every
+  monitor by a GPU shader, so it never repeats, stays sharp at any resolution
+  and uses almost no CPU. Any key, click or mouse movement ends it, and
+  Omarchy's lock and idle handling treat it like the stock screensaver.
 - **Keyboard control** that leaves text editing alone:
 
   | Keys | Action |
@@ -115,7 +115,7 @@ omarchy plugin remove matrix.grid
 | `hypr/cellgrid.lua` | Hyprland | Registers the `lua:cellgrid` layout. Places and resizes tiles. Provides the key bindings and Super+drag. Saves settings. |
 | `Overlay.qml` | Omarchy shell | Draws the grid during drags and the corner resize dots. |
 | `Panel.qml` | Omarchy shell | The bar button and its Grid panel. |
-| `screensaver/matrix-rain` | bash | Plays `matrix-rain.mp4` in mpv on every monitor with Omarchy's screensaver app ID. `wake.lua` ends it on input. |
+| `screensaver/matrix-rain` | bash | Runs the `matrix-rain.glsl` shader in mpv on every monitor with Omarchy's screensaver app ID. `wake.lua` ends it on input. `build-glyphs` regenerates the shader's glyph atlas. |
 
 The shell parts talk to the layout through Hyprland's Lua runtime. They read
 state with `hyprctl repl 'return require("hypr.cellgrid").settings_json()'`
@@ -129,4 +129,4 @@ variables at the top of `hypr/cellgrid.lua`.
 
 ## License
 
-MIT, including the matrix rain video.
+MIT, including the matrix rain shader.

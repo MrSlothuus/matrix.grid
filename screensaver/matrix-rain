@@ -1,16 +1,19 @@
 #!/bin/bash
 
-# Play the matrix rain as a fullscreen screensaver on every monitor. It uses
-# Omarchy's screensaver app ID so idle tracking, notifications, fullscreen
-# rules, and locking treat it like the stock screensaver.
+# Play the matrix rain as a fullscreen screensaver on every monitor. The rain
+# is drawn by a GPU shader (matrix-rain.glsl) over a tiny generated black
+# frame, so mpv decodes no video and uses next to no CPU. It uses Omarchy's
+# screensaver app ID so idle tracking, notifications, fullscreen rules, and
+# locking treat it like the stock screensaver.
 # Usage: matrix-rain [force]   (force ignores Omarchy's screensaver-off toggle)
 set -euo pipefail
 
 here="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
-video="$here/matrix-rain.mp4"
+shader="$here/matrix-rain.glsl"
+app_id=org.omarchy.screensaver
 runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$UID}/matrix-grid-screensaver"
 
-[[ -r $video ]] || { echo "Matrix rain video is missing: $video" >&2; exit 1; }
+[[ -r $shader ]] || { echo "Matrix rain shader is missing: $shader" >&2; exit 1; }
 [[ $(omarchy-shell lock isLocked 2>/dev/null) != true ]] || exit 0
 if [[ ${1:-} != force ]] && omarchy-toggle-enabled screensaver-off; then
   exit 0
@@ -20,52 +23,69 @@ mkdir -p -m 700 "$runtime_dir"
 exec 9>"$runtime_dir/instance.lock"
 flock -n 9 || exit 0
 
+player_pids() {
+  hyprctl clients -j | APP_ID=$app_id jq -r '.[] | select(.class == env.APP_ID) | .pid'
+}
+
+focus_monitor() {
+  hyprctl dispatch "hl.dsp.focus({ monitor = \"$1\" })" >/dev/null 2>&1 ||
+    hyprctl dispatch focusmonitor "$1" >/dev/null
+}
+
+# Omarchy sends screensaver windows to a hidden special workspace unless the
+# launcher names one, so Hyprland starts each player on its monitor's own.
+launch_player() {
+  local workspace=$1 command
+  shift
+  printf -v command '%q ' "$@"
+  hyprctl dispatch "hl.dsp.exec_cmd([[[workspace $workspace] $command]])" >/dev/null 2>&1 ||
+    hyprctl dispatch exec -- "[workspace $workspace]" "$command" >/dev/null
+}
+
 players=()
-focus_watcher=""
+focused="$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')"
 cleanup() {
   trap - EXIT INT TERM HUP
-  if [[ -n $focus_watcher ]]; then
-    kill "$focus_watcher" 2>/dev/null || true
-    wait "$focus_watcher" 2>/dev/null || true
-  fi
-  if ((${#players[@]})); then
-    kill "${players[@]}" 2>/dev/null || true
-    wait "${players[@]}" 2>/dev/null || true
-  fi
-  rm -f "$runtime_dir"/player-*.sock
+  ((${#players[@]})) && kill "${players[@]}" 2>/dev/null || true
+  # Emptying a special workspace focuses its monitor; hand focus back.
+  [[ -z $focused ]] || focus_monitor "$focused" || true
 }
 trap cleanup EXIT
 trap 'exit 0' INT TERM HUP
 
-mapfile -t monitors < <(hyprctl monitors -j | jq -r '.[].name')
-((${#monitors[@]})) || exit 1
-
-for index in "${!monitors[@]}"; do
-  mpv --no-config --load-scripts=no --no-terminal \
-    --vo=gpu --gpu-context=wayland --hwdec=auto-safe \
-    --wayland-app-id=org.omarchy.screensaver --title="Matrix Rain" \
-    --fullscreen --screen-name="${monitors[$index]}" --fs-screen-name="${monitors[$index]}" \
-    --loop-file=inf --audio=no --sub=no --panscan=1 \
+while read -r monitor special; do
+  focus_monitor "$monitor"
+  before=$(player_pids | wc -l)
+  # Share a special workspace that is already showing, like the scratchpad.
+  launch_player "${special:-special:screensaver-$monitor}" \
+    mpv --no-config --load-scripts=no --no-terminal \
+    --vo=gpu --gpu-context=wayland --hwdec=no \
+    --glsl-shaders="$shader" --no-keepaspect \
+    --wayland-app-id="$app_id" --title="Matrix Rain" --fullscreen \
+    --audio=no --sub=no \
     --stop-screensaver=no --cursor-autohide=always \
     --no-osc --osd-level=0 --input-terminal=no \
     --input-default-bindings=no --input-builtin-bindings=no \
     --script="$here/wake.lua" \
-    --input-ipc-server="$runtime_dir/player-$index.sock" \
-    -- "$video" 9>&- &
-  players+=("$!")
-done
+    -- "av://lavfi:color=c=black:s=16x16:r=30"
 
-# A compositor shortcut may change focus without delivering a key to mpv.
-# Close all players when the user returns to an application this way.
-(
-  sleep 1
-  while hyprctl activewindow -j | jq -e '.class == "org.omarchy.screensaver"' >/dev/null; do
-    sleep 0.25
+  # A new window maps on whichever monitor is focused, so wait for this one
+  # before moving on to the next monitor.
+  for ((tries = 0; tries < 50; tries++)); do
+    (($(player_pids | wc -l) > before)) && break
+    sleep 0.1
   done
-  kill "${players[@]}" 2>/dev/null || true
-) 9>&- &
-focus_watcher=$!
+done < <(hyprctl monitors -j | jq -r '.[] | "\(.name) \(.specialWorkspace.name)"')
 
-# Dismissing one monitor dismisses every monitor. The normal lock command also
-# terminates these players by their screensaver app ID.
-wait -n "${players[@]}" || true
+mapfile -t players < <(player_pids)
+((${#players[@]})) || { echo "The matrix rain did not start" >&2; exit 1; }
+[[ -z $focused ]] || focus_monitor "$focused"
+
+# Dismissing one monitor dismisses every monitor. A compositor shortcut may
+# also change focus without delivering a key to mpv, so stop when the user is
+# back in an application. The lock command ends the players by their app ID.
+sleep 1
+while kill -0 "${players[@]}" 2>/dev/null &&
+  hyprctl activewindow -j | APP_ID=$app_id jq -e '.class == env.APP_ID' >/dev/null; do
+  sleep 0.25
+done
