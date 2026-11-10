@@ -28,11 +28,18 @@ monitor.
   - Tidy up: pack every window on the workspace toward the top-left, keeping
     its size.
   - Show or hide the resize dots.
-  - Start the matrix rain.
+  - Pick the matrix rain's colour, speed and amount, start it, or render it as the
+    current theme's animated wallpaper.
 - **Matrix rain screensaver.** Blue digital rain is drawn fullscreen on every
   monitor by a GPU shader, so it never repeats, stays sharp at any resolution
   and uses almost no CPU. Any key, click or mouse movement ends it, and
   Omarchy's lock and idle handling treat it like the stock screensaver.
+  Colour, speed and amount of rain are set in the Grid panel, or from a
+  terminal with `omarchy-shell matrix.grid rainColor "#3ddc6a"`,
+  `omarchy-shell matrix.grid rainSpeed 150` and
+  `omarchy-shell matrix.grid rainAmount 200` (both 25–300 %). The screensaver uses
+  them the next time it starts. **Use as wallpaper** bakes them into a
+  looping video for the wallpaper engine, which takes about two minutes.
 - **Keyboard control** that leaves text editing alone:
 
   | Keys | Action |
@@ -116,6 +123,8 @@ omarchy plugin remove matrix.grid
 | `Overlay.qml` | Omarchy shell | Draws the grid during drags and the corner resize dots. |
 | `Panel.qml` | Omarchy shell | The bar button and its Grid panel. |
 | `screensaver/matrix-rain` | bash | Runs the `matrix-rain.glsl` shader in mpv on every monitor with Omarchy's screensaver app ID. `wake.lua` ends it on input. `build-glyphs` regenerates the shader's glyph atlas. |
+| `screensaver/rain-shader` | bash | Writes the shader with the colour, speed and amount saved in `~/.local/state/omarchy/matrix-rain.json`. |
+| `screensaver/matrix-rain-wallpaper` | bash | Renders the rain to a seamless 32-second video and sets it as the current theme's background. Needs `ffmpeg`. |
 
 The shell parts talk to the layout through Hyprland's Lua runtime. They read
 state with `hyprctl repl 'return require("hypr.cellgrid").settings_json()'`

@@ -9,11 +9,16 @@
 //!BIND GLYPHS
 //!DESC matrix rain
 
-#define FPS 30.0          // must match the frame rate the launcher asks for
+#define FPS 30.0          // ./rain-shader sets this to the player's frame rate
 #define ATLAS vec2(8.0, 8.0)  // glyph columns, rows in the atlas
 
-const vec3 TRAIL = vec3(0.42, 0.48, 0.76);
-const vec3 HEAD = vec3(0.92, 0.95, 1.00);
+// ./rain-shader rewrites these three lines from the Grid panel's settings.
+#define RAIN_COLOR vec3(0.420, 0.478, 0.761)
+#define RAIN_SPEED 1.00
+#define RAIN_AMOUNT 1.00
+
+#define TRAIL RAIN_COLOR
+#define HEAD mix(vec3(1.0), RAIN_COLOR, 0.12)
 
 float hash(vec2 p) {
     vec3 q = fract(vec3(p.xyx) * 0.1031);
@@ -39,7 +44,7 @@ vec3 sheet(vec2 px, vec2 size, float t, float rows, float seed, float gain) {
     float d = pos - cycle * period - cell.y;   // glyphs behind the head
 
     // Most columns sit a pass out, which keeps the rain sparse.
-    if (d < 0.0 || d > len || hash(vec2(cell.x + seed, cycle)) > 0.24)
+    if (d < 0.0 || d > len || hash(vec2(cell.x + seed, cycle)) > 0.24 * RAIN_AMOUNT)
         return vec3(0.0);
 
     // Glyphs are fixed for a pass, apart from the odd one that flickers.
@@ -51,15 +56,20 @@ vec3 sheet(vec2 px, vec2 size, float t, float rows, float seed, float gain) {
     vec2 slot = vec2(mod(g, ATLAS.x), floor(g / ATLAS.x));
     float ink = texture(GLYPHS, (slot + uv) / ATLAS).r;
 
+    // The newest glyph fades in as the head arrives and then cools from white
+    // to the trail colour, so the drop glides instead of stepping a cell at a
+    // time, however slowly it falls.
     float fade = pow(1.0 - d / len, 1.7);
-    vec3 color = mix(TRAIL * fade, HEAD, step(d, 1.0));
+    float arrive = smoothstep(0.0, 1.0, d);
+    float white = 1.0 - smoothstep(1.0, 2.2, d);
+    vec3 color = mix(TRAIL * fade, HEAD, white) * arrive;
     return color * ink * gain;
 }
 
 vec4 hook() {
     vec2 size = HOOKED_size;
     vec2 px = HOOKED_pos * size;
-    float t = float(frame) / FPS;
+    float t = float(frame) / FPS * RAIN_SPEED;
 
     vec3 c = sheet(px, size, t, 78.0, 1.0, 0.45);
     c = max(c, sheet(px, size, t, 60.0, 2.0, 0.7));

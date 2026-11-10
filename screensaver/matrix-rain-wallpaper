@@ -1,0 +1,66 @@
+#!/bin/bash
+
+# Render the matrix rain, with the colour and speed chosen in the Grid panel,
+# to a seamless 32-second video and set it as the current theme's background.
+# The wallpaper engine plays video only, so the rain is baked here, unlike the
+# screensaver where the shader runs live. Takes about two minutes.
+# Usage: matrix-rain-wallpaper
+set -euo pipefail
+
+here="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy"
+runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$UID}/matrix-grid-screensaver"
+loop=32 fade=2
+
+notify() {
+  omarchy-notification-send -g 󰖗 "Matrix rain" "$1" >/dev/null 2>&1 || true
+}
+
+mkdir -p -m 700 "$runtime_dir"
+exec 8>"$runtime_dir/wallpaper.lock"
+flock -n 8 || { notify "The wallpaper is already being rendered"; exit 0; }
+
+theme="$(<"$state_dir/current/theme.name")"
+output_dir="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/backgrounds/$theme"
+output="$output_dir/0-matrix-rain.mp4"
+
+# Render at the largest monitor's resolution; H.264 needs even dimensions.
+read -r width height < <(hyprctl monitors -j |
+  jq -r 'max_by(.width * .height) | "\(.width - .width % 2) \(.height - .height % 2)"')
+
+# The rain falls on the theme's background colour instead of pure black.
+background="$(omarchy-theme-color background '#000000')"
+floor_r=$((16#${background:1:2})) floor_g=$((16#${background:3:2})) floor_b=$((16#${background:5:2}))
+
+# The Grid panel watches this file to show that a render is under way.
+status="$runtime_dir/wallpaper.status"
+work="$(mktemp -d "$runtime_dir/wallpaper.XXXXXX")"
+trap 'rm -rf "$work"; echo idle >"$status"' EXIT
+echo rendering >"$status"
+trap 'notify "Rendering the wallpaper failed"' ERR
+
+notify "Rendering the wallpaper. This takes about two minutes."
+"$here/rain-shader" "$work/rain.glsl"
+
+mpv --no-config --load-scripts=no --no-terminal --audio=no --hwdec=no \
+  --vf=gpu --glsl-shaders="$work/rain.glsl" --length=$((loop + fade)) \
+  --ovc=libx264 --ovcopts=crf=12,preset=ultrafast -o "$work/raw.mp4" \
+  -- "av://lavfi:color=c=black:s=${width}x${height}:r=30"
+
+# Fade the extra seconds at the end over the start so the loop has no seam.
+ffmpeg -v error -y -i "$work/raw.mp4" -filter_complex "
+  [0:v]split=3[a][b][c];
+  [a]trim=start=$fade:end=$loop,setpts=PTS-STARTPTS[middle];
+  [b]trim=start=$loop:end=$((loop + fade)),setpts=PTS-STARTPTS[tail];
+  [c]trim=start=0:end=$fade,setpts=PTS-STARTPTS[head];
+  [tail][head]xfade=transition=fade:duration=$fade:offset=0[seam];
+  [seam][middle]concat=n=2:v=1,format=gbrp,
+  lutrgb=r='max(val,$floor_r)':g='max(val,$floor_g)':b='max(val,$floor_b)',format=yuv420p[out]" \
+  -map "[out]" -c:v libx264 -profile:v high -crf 20 -preset medium -g 60 \
+  -movflags +faststart -an "$work/loop.mp4"
+
+mkdir -p "$output_dir"
+mv "$work/loop.mp4" "$output"
+omarchy-theme-bg-set "$output"
+owe refresh >/dev/null 2>&1 || true
+notify "The wallpaper now shows the new rain"

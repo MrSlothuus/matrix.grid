@@ -1,0 +1,38 @@
+#!/bin/bash
+
+# Write matrix-rain.glsl to the given path with the colour, speed and amount
+# of rain chosen in the Grid panel, which saves them to ~/.local/state/omarchy/matrix-rain.json.
+# Missing or invalid settings fall back to the defaults.
+# Usage: rain-shader <output.glsl> [frames-per-second]
+set -euo pipefail
+
+here="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+settings="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/matrix-rain.json"
+output=${1:?Usage: rain-shader <output.glsl> [frames-per-second]}
+fps=${2:-30}
+
+color="#6b7ac2" speed=100 amount=100
+
+percent() {
+  [[ $1 =~ ^[0-9]{2,3}$ ]] && (($1 >= 25 && $1 <= 300))
+}
+
+if [[ -r $settings ]]; then
+  saved_color=$(jq -r '.color // empty' "$settings" 2>/dev/null || true)
+  saved_speed=$(jq -r '.speed // empty' "$settings" 2>/dev/null || true)
+  saved_amount=$(jq -r '.amount // empty' "$settings" 2>/dev/null || true)
+  [[ $saved_color =~ ^#[0-9a-fA-F]{6}$ ]] && color=$saved_color
+  percent "$saved_speed" && speed=$saved_speed
+  percent "$saved_amount" && amount=$saved_amount
+fi
+
+rgb=$(LC_ALL=C awk -v r="$((16#${color:1:2}))" -v g="$((16#${color:3:2}))" -v b="$((16#${color:5:2}))" \
+  'BEGIN { printf "%.3f, %.3f, %.3f", r / 255, g / 255, b / 255 }')
+rate=$(LC_ALL=C awk -v speed="$speed" 'BEGIN { printf "%.2f", speed / 100 }')
+density=$(LC_ALL=C awk -v amount="$amount" 'BEGIN { printf "%.2f", amount / 100 }')
+
+sed -e "s|^#define FPS [0-9.]*|#define FPS $fps.0|" \
+  -e "s|^#define RAIN_COLOR .*|#define RAIN_COLOR vec3($rgb)|" \
+  -e "s|^#define RAIN_SPEED .*|#define RAIN_SPEED $rate|" \
+  -e "s|^#define RAIN_AMOUNT .*|#define RAIN_AMOUNT $density|" \
+  "$here/matrix-rain.glsl" >"$output"

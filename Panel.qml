@@ -25,6 +25,23 @@ Panel {
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property string rainLauncher: Qt.resolvedUrl("screensaver/matrix-rain").toString().replace("file://", "")
+  readonly property string rainWallpaper: Qt.resolvedUrl("screensaver/matrix-rain-wallpaper").toString().replace("file://", "")
+  // screensaver/rain-shader reads this file each time the rain starts.
+  readonly property string rainSettingsPath: (Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state") + "/omarchy/matrix-rain.json"
+  property var rain: ({ color: "#6b7ac2", speed: 100, amount: 100 })
+  // screensaver/matrix-rain-wallpaper keeps this file at "rendering" while it works.
+  readonly property string wallpaperStatusPath: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/matrix-grid-screensaver/wallpaper.status"
+  property bool wallpaperRendering: false
+  readonly property var rainColors: [
+    { name: "Blue", value: "#6b7ac2" },
+    { name: "Green", value: "#3ddc6a" },
+    { name: "Cyan", value: "#5fd7e6" },
+    { name: "Purple", value: "#a678e2" },
+    { name: "Red", value: "#e25a5a" },
+    { name: "Amber", value: "#e6a23c" },
+    { name: "White", value: "#c8ccd8" },
+    { name: "Theme accent", value: hex(Color.accent) }
+  ]
   readonly property var presets: [
     { label: "1 × 1", w: 1, h: 1 },
     { label: "2 × 2", w: 2, h: 2 },
@@ -57,6 +74,29 @@ Panel {
     lua('require("hypr.cellgrid").set_setting("' + key + '", ' + JSON.stringify(value) + ')')
   }
 
+  function hex(color) {
+    function part(value) { return ("0" + Math.round(value * 255).toString(16)).slice(-2) }
+    return "#" + part(color.r) + part(color.g) + part(color.b)
+  }
+
+  function loadRain(text) {
+    try {
+      var saved = JSON.parse(text)
+      var next = Object.assign({}, rain)
+      if (/^#[0-9a-fA-F]{6}$/.test(saved.color)) next.color = saved.color.toLowerCase()
+      if (saved.speed >= 25 && saved.speed <= 300) next.speed = Math.round(saved.speed)
+      if (saved.amount >= 25 && saved.amount <= 300) next.amount = Math.round(saved.amount)
+      rain = next
+    } catch (error) {}
+  }
+
+  function setRain(key, value) {
+    var next = Object.assign({}, rain)
+    next[key] = value
+    rain = next
+    rainFile.setText(JSON.stringify(next) + "\n")
+  }
+
   function sizeFocused(w, h) {
     lua('require("hypr.cellgrid").size_focused(' + w + ', ' + h + ')')
   }
@@ -74,6 +114,15 @@ Panel {
     function toggle(): void { root.toggle() }
     function refresh(): void { root.refresh() }
     function state(): string { return JSON.stringify(root.grid) }
+    function rainColor(color: string): void {
+      if (/^#[0-9a-fA-F]{6}$/.test(color)) root.setRain("color", color.toLowerCase())
+    }
+    function rainSpeed(percent: int): void {
+      root.setRain("speed", Math.max(25, Math.min(300, percent)))
+    }
+    function rainAmount(percent: int): void {
+      root.setRain("amount", Math.max(25, Math.min(300, percent)))
+    }
   }
 
   // cellgrid.lua rewrites this after every layout or settings change.
@@ -82,6 +131,26 @@ Panel {
     watchChanges: true
     printErrors: false
     onFileChanged: root.refresh()
+  }
+
+  FileView {
+    id: rainFile
+    path: root.rainSettingsPath
+    watchChanges: true
+    atomicWrites: true
+    printErrors: false
+    onLoaded: root.loadRain(text())
+    onFileChanged: reload()
+  }
+
+  FileView {
+    id: wallpaperStatus
+    path: root.wallpaperStatusPath
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.wallpaperRendering = text().trim() === "rendering"
+    onLoadFailed: root.wallpaperRendering = false
+    onFileChanged: reload()
   }
 
   Process {
@@ -154,6 +223,52 @@ Panel {
     }
   }
 
+  // Label, slider from 25 % to 300 % in steps of 25, value.
+  component PercentSlider: Row {
+    id: percentSlider
+    property string label: ""
+    property int value: 100
+    property int shown: value
+    signal chosen(int value)
+
+    spacing: Style.space(8)
+    onValueChanged: shown = value
+
+    Text {
+      id: percentLabel
+      width: Style.space(72)
+      anchors.verticalCenter: parent.verticalCenter
+      text: percentSlider.label
+      color: root.foreground
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.body
+    }
+
+    PanelSlider {
+      width: parent.width - percentLabel.width - percentValue.width - parent.spacing * 2
+      anchors.verticalCenter: parent.verticalCenter
+      bar: root.bar
+      minimum: 25
+      maximum: 300
+      step: 25
+      value: percentSlider.value
+      onMoved: function(value) { percentSlider.shown = Math.round(value / 25) * 25 }
+      onReleased: function(value) { percentSlider.chosen(Math.round(value / 25) * 25) }
+    }
+
+    Text {
+      id: percentValue
+      width: Style.space(44)
+      anchors.verticalCenter: parent.verticalCenter
+      horizontalAlignment: Text.AlignRight
+      text: percentSlider.shown + "%"
+      color: root.foreground
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.body
+      font.bold: true
+    }
+  }
+
   WidgetButton {
     id: button
     anchors.fill: parent
@@ -172,7 +287,7 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: fittedContentWidth(Style.space(300))
-    contentHeight: fittedContentHeight(content.implicitHeight, Style.space(620))
+    contentHeight: fittedContentHeight(content.implicitHeight, Style.space(800))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -363,8 +478,65 @@ Panel {
           }
         }
 
-        // The screensaver works whether or not the grid layout is on.
+        // The matrix rain works whether or not the grid layout is on.
         PanelSeparator { width: parent.width; foreground: root.foreground }
+
+        PanelSectionHeader {
+          text: "Matrix rain"
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+        }
+
+        Row {
+          spacing: Style.space(6)
+
+          Text {
+            width: Style.space(72)
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Colour"
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+          }
+
+          Repeater {
+            model: root.rainColors
+            Rectangle {
+              id: swatch
+              required property var modelData
+              readonly property bool chosen: root.rain.color === modelData.value
+              width: Style.space(18)
+              height: width
+              radius: width / 2
+              color: modelData.value
+              border.width: chosen ? Math.max(2, Style.space(2)) : 0
+              border.color: root.foreground
+              scale: swatchArea.containsMouse ? 1.15 : 1
+
+              MouseArea {
+                id: swatchArea
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.setRain("color", swatch.modelData.value)
+              }
+            }
+          }
+        }
+
+        PercentSlider {
+          width: parent.width
+          label: "Speed"
+          value: root.rain.speed
+          onChosen: function(value) { root.setRain("speed", value) }
+        }
+
+        PercentSlider {
+          width: parent.width
+          label: "Amount"
+          value: root.rain.amount
+          onChosen: function(value) { root.setRain("amount", value) }
+        }
 
         Button {
           width: parent.width
@@ -376,6 +548,21 @@ Panel {
           onClicked: {
             root.close()
             Quickshell.execDetached([root.rainLauncher, "force"])
+          }
+        }
+
+        Button {
+          width: parent.width
+          text: root.wallpaperRendering ? "Rendering wallpaper… about 2 min" : "Use as wallpaper"
+          iconText: String.fromCodePoint(root.wallpaperRendering ? 0xF051F : 0xF0E09)
+          leftAlign: true
+          bordered: true
+          enabled: !root.wallpaperRendering
+          opacity: enabled ? 1 : 0.6
+          tooltipText: "Render the rain with this colour and speed and set it as the current theme's background; takes about two minutes"
+          onClicked: {
+            root.wallpaperRendering = true
+            Quickshell.execDetached([root.rainWallpaper])
           }
         }
       }
