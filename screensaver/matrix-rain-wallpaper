@@ -1,66 +1,98 @@
 #!/bin/bash
 
-# Render the matrix rain, with the colour and speed chosen in the Grid panel,
-# to a seamless 32-second video and set it as the current theme's background.
-# The wallpaper engine plays video only, so the rain is baked here, unlike the
-# screensaver where the shader runs live. Takes about two minutes.
-# Usage: matrix-rain-wallpaper
+# Make the matrix rain, with the colour, speed and amount chosen in the Grid
+# panel, the current theme's animated wallpaper. The rain is drawn live by the
+# same GPU shader as the screensaver, inside Omarchy's wallpaper engine (owe):
+# owe plays a tiny marker video and the shader paints the rain over it at the
+# monitor's full resolution. Nothing is decoded, so it costs next to no CPU,
+# never repeats and stays sharp on any monitor. The shader only runs for videos
+# as small as the marker, so other wallpapers and theme intros are untouched.
+# Usage: matrix-rain-wallpaper            apply the current panel settings
+#        matrix-rain-wallpaper --remove   stop loading the shader into owe
 set -euo pipefail
 
 here="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy"
 runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$UID}/matrix-grid-screensaver"
-loop=32 fade=2
+dropin_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/owed.service.d"
+dropin="$dropin_dir/matrix-grid-rain.conf"
+shader="$state_dir/matrix-rain-wallpaper.glsl"
+fps=30 marker_seconds=600
 
 notify() {
   omarchy-notification-send -g 󰖗 "Matrix rain" "$1" >/dev/null 2>&1 || true
 }
 
+if [[ ${1:-} == --remove ]]; then
+  if [[ -f $dropin ]]; then
+    rm -f "$dropin"
+    rmdir "$dropin_dir" 2>/dev/null || true
+    systemctl --user daemon-reload
+    systemctl --user try-restart owed.service
+  fi
+  rm -f "$shader"
+  exit 0
+fi
+
 mkdir -p -m 700 "$runtime_dir"
 exec 8>"$runtime_dir/wallpaper.lock"
-flock -n 8 || { notify "The wallpaper is already being rendered"; exit 0; }
+flock -n 8 || { notify "The wallpaper is already being set up"; exit 0; }
 
 theme="$(<"$state_dir/current/theme.name")"
 output_dir="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/backgrounds/$theme"
 output="$output_dir/0-matrix-rain.mp4"
 
-# Render at the largest monitor's resolution; H.264 needs even dimensions.
-read -r width height < <(hyprctl monitors -j |
-  jq -r 'max_by(.width * .height) | "\(.width - .width % 2) \(.height - .height % 2)"')
-
-# The rain falls on the theme's background colour instead of pure black.
-background="$(omarchy-theme-color background '#000000')"
-floor_r=$((16#${background:1:2})) floor_g=$((16#${background:3:2})) floor_b=$((16#${background:5:2}))
-
-# The Grid panel watches this file to show that a render is under way.
+# The Grid panel watches this file to show that the wallpaper is being set up.
 status="$runtime_dir/wallpaper.status"
 work="$(mktemp -d "$runtime_dir/wallpaper.XXXXXX")"
 trap 'rm -rf "$work"; echo idle >"$status"' EXIT
 echo rendering >"$status"
-trap 'notify "Rendering the wallpaper failed"' ERR
+trap 'notify "Setting the wallpaper failed"' ERR
 
-notify "Rendering the wallpaper. This takes about two minutes."
-"$here/rain-shader" "$work/rain.glsl"
+# The rain falls on the theme's background colour instead of pure black.
+background="$(omarchy-theme-color background '#000000')"
+[[ $background =~ ^#[0-9a-fA-F]{6}$ ]] || background="#000000"
+floor=$(LC_ALL=C awk -v r="$((16#${background:1:2}))" -v g="$((16#${background:3:2}))" -v b="$((16#${background:5:2}))" \
+  'BEGIN { printf "%.3f, %.3f, %.3f", r / 255, g / 255, b / 255 }')
 
-mpv --no-config --load-scripts=no --no-terminal --audio=no --hwdec=no \
-  --vf=gpu --glsl-shaders="$work/rain.glsl" --length=$((loop + fade)) \
-  --ovc=libx264 --ovcopts=crf=12,preset=ultrafast -o "$work/raw.mp4" \
-  -- "av://lavfi:color=c=black:s=${width}x${height}:r=30"
+# The screensaver's shader, guarded so that it only draws over the marker
+# video (NATIVE_CROPPED is the size of the video being played).
+"$here/rain-shader" "$work/rain.glsl" "$fps"
+sed -i -e 's|^//!HOOK OUTPUT$|//!HOOK OUTPUT\n//!WHEN NATIVE_CROPPED.w 17 <|' \
+  -e "s|^#define RAIN_AMOUNT \\(.*\\)\$|#define RAIN_AMOUNT \\1\\n#define FLOOR vec3($floor)|" \
+  -e 's|^    return vec4(c, 1.0);$|    return vec4(max(c, FLOOR), 1.0);|' "$work/rain.glsl"
+for line in '//!WHEN NATIVE_CROPPED.w 17 <' '#define FLOOR vec3(' 'return vec4(max(c, FLOOR), 1.0);'; do
+  grep -qF -- "$line" "$work/rain.glsl" || { echo "matrix-rain.glsl changed; the wallpaper shader needs updating" >&2; false; }
+done
+mkdir -p "$state_dir"
+mv "$work/rain.glsl" "$shader"
 
-# Fade the extra seconds at the end over the start so the loop has no seam.
-ffmpeg -v error -y -i "$work/raw.mp4" -filter_complex "
-  [0:v]split=3[a][b][c];
-  [a]trim=start=$fade:end=$loop,setpts=PTS-STARTPTS[middle];
-  [b]trim=start=$loop:end=$((loop + fade)),setpts=PTS-STARTPTS[tail];
-  [c]trim=start=0:end=$fade,setpts=PTS-STARTPTS[head];
-  [tail][head]xfade=transition=fade:duration=$fade:offset=0[seam];
-  [seam][middle]concat=n=2:v=1,format=gbrp,
-  lutrgb=r='max(val,$floor_r)':g='max(val,$floor_g)':b='max(val,$floor_b)',format=yuv420p[out]" \
-  -map "[out]" -c:v libx264 -profile:v high -crf 20 -preset medium -g 60 \
-  -movflags +faststart -an "$work/loop.mp4"
-
+# A tiny marker video in the theme's background colour. Without the shader it
+# shows as a plain background. Long, so owe rarely loops it.
 mkdir -p "$output_dir"
-mv "$work/loop.mp4" "$output"
+ffmpeg -v error -y -f lavfi -i "color=c=0x${background:1}:s=16x16:r=$fps:d=$marker_seconds" \
+  -c:v libx264 -preset veryslow -tune stillimage -g $((fps * 60)) -pix_fmt yuv420p \
+  -movflags +faststart -an -f mp4 "$work/marker.mp4"
+mv "$work/marker.mp4" "$output"
+
+# Have owe load the shader. The renderer reads it when it starts, so restart
+# the daemon when its environment changes and the renderer when only the
+# shader does.
+want="[Service]
+Environment=\"OWE_MPV_OPTIONS=glsl-shaders=$shader\""
+if [[ ! -f $dropin || "$(<"$dropin")" != "$want" ]]; then
+  mkdir -p "$dropin_dir"
+  printf '%s\n' "$want" >"$dropin"
+  systemctl --user daemon-reload
+  systemctl --user restart owed.service
+  for ((tries = 0; tries < 50; tries++)); do
+    owe status >/dev/null 2>&1 && break
+    sleep 0.1
+  done
+else
+  owe render-restart >/dev/null 2>&1 || true
+fi
+
 omarchy-theme-bg-set "$output"
 owe refresh >/dev/null 2>&1 || true
-notify "The wallpaper now shows the new rain"
+notify "The wallpaper now shows the live rain"

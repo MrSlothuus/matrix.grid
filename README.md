@@ -38,8 +38,11 @@ monitor.
   terminal with `omarchy-shell matrix.grid rainColor "#3ddc6a"`,
   `omarchy-shell matrix.grid rainSpeed 150` and
   `omarchy-shell matrix.grid rainAmount 200` (both 25–300 %). The screensaver uses
-  them the next time it starts. **Use as wallpaper** bakes them into a
-  looping video for the wallpaper engine, which takes about two minutes.
+  them the next time it starts. **Use as wallpaper** makes the same live
+  shader the current theme's animated background, drawn inside Omarchy's
+  wallpaper engine at each monitor's resolution. It takes a second and uses
+  almost no CPU, because no video is decoded. Press it again after changing
+  the colour, speed or amount.
 - **Keyboard control** that leaves text editing alone:
 
   | Keys | Action |
@@ -56,7 +59,8 @@ survive Hyprland reloads and restarts.
 
 - Omarchy 4 with the Lua Hyprland config (`~/.config/hypr/hyprland.lua`).
 - The Omarchy shell (Quickshell).
-- `mpv` and `jq` for the screensaver. Omarchy ships both.
+- `mpv` and `jq` for the screensaver, and `ffmpeg` and Omarchy's wallpaper
+  engine `owe` (0.2.14 or later) for the live wallpaper. Omarchy ships all of them.
 
 It was built and tested on Omarchy 4.0.2, Hyprland 0.56.1 and Quickshell 0.3.1.
 
@@ -124,7 +128,7 @@ omarchy plugin remove matrix.grid
 | `Panel.qml` | Omarchy shell | The bar button and its Grid panel. |
 | `screensaver/matrix-rain` | bash | Runs the `matrix-rain.glsl` shader in mpv on every monitor with Omarchy's screensaver app ID. `wake.lua` ends it on input. `build-glyphs` regenerates the shader's glyph atlas. |
 | `screensaver/rain-shader` | bash | Writes the shader with the colour, speed and amount saved in `~/.local/state/omarchy/matrix-rain.json`. |
-| `screensaver/matrix-rain-wallpaper` | bash | Renders the rain to a seamless 32-second video and sets it as the current theme's background. Needs `ffmpeg`. |
+| `screensaver/matrix-rain-wallpaper` | bash | Makes the rain the current theme's live background. It writes a tiny marker video as the background and has the wallpaper engine (`owe`) load the shader through `OWE_MPV_OPTIONS`, set in the systemd drop-in `~/.config/systemd/user/owed.service.d/matrix-grid-rain.conf`. The shader only draws over videos 16 pixels wide or less, so other wallpapers and theme intros look as before. Needs `ffmpeg`. `--remove` takes the drop-in away. |
 
 The shell parts talk to the layout through Hyprland's Lua runtime. They read
 state with `hyprctl repl 'return require("hypr.cellgrid").settings_json()'`

@@ -553,13 +553,13 @@ Panel {
 
         Button {
           width: parent.width
-          text: root.wallpaperRendering ? "Rendering wallpaper… about 2 min" : "Use as wallpaper"
+          text: root.wallpaperRendering ? "Setting wallpaper…" : "Use as wallpaper"
           iconText: String.fromCodePoint(root.wallpaperRendering ? 0xF051F : 0xF0E09)
           leftAlign: true
           bordered: true
           enabled: !root.wallpaperRendering
           opacity: enabled ? 1 : 0.6
-          tooltipText: "Render the rain with this colour and speed and set it as the current theme's background; takes about two minutes"
+          tooltipText: "Make the rain, with this colour, speed and amount, the current theme's live animated background"
           onClicked: {
             root.wallpaperRendering = true
             Quickshell.execDetached([root.rainWallpaper])

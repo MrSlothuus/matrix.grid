@@ -38,4 +38,7 @@ if command -v hyprctl >/dev/null && hyprctl version >/dev/null 2>&1; then
   hyprctl reload >/dev/null
   echo "Hyprland reloaded with its standard layout."
 fi
+# Stop loading the rain shader into the wallpaper engine.
+"$plugin_dir/screensaver/matrix-rain-wallpaper" --remove &&
+  echo "The wallpaper engine no longer loads the matrix rain shader."
 echo "Now run: omarchy plugin remove matrix.grid"
