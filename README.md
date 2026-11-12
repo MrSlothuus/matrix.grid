@@ -42,7 +42,7 @@ monitor.
   shader the current theme's animated background, drawn inside Omarchy's
   wallpaper engine at each monitor's resolution. It takes a second and uses
   almost no CPU, because no video is decoded. Press it again after changing
-  the colour, speed or amount.
+  the colour, speed or amount, or run `omarchy-shell matrix.grid useAsWallpaper`.
 - **Keyboard control** that leaves text editing alone:
 
   | Keys | Action |

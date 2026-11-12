@@ -97,6 +97,15 @@ Panel {
     rainFile.setText(JSON.stringify(next) + "\n")
   }
 
+  // Make the live GPU shader rain the current theme's wallpaper. The script
+  // never bakes a video, so this takes about a second.
+  function useAsWallpaper() {
+    if (wallpaperRendering)
+      return
+    wallpaperRendering = true
+    Quickshell.execDetached([rainWallpaper])
+  }
+
   function sizeFocused(w, h) {
     lua('require("hypr.cellgrid").size_focused(' + w + ', ' + h + ')')
   }
@@ -123,6 +132,7 @@ Panel {
     function rainAmount(percent: int): void {
       root.setRain("amount", Math.max(25, Math.min(300, percent)))
     }
+    function useAsWallpaper(): void { root.useAsWallpaper() }
   }
 
   // cellgrid.lua rewrites this after every layout or settings change.
@@ -560,10 +570,7 @@ Panel {
           enabled: !root.wallpaperRendering
           opacity: enabled ? 1 : 0.6
           tooltipText: "Make the rain, with this colour, speed and amount, the current theme's live animated background"
-          onClicked: {
-            root.wallpaperRendering = true
-            Quickshell.execDetached([root.rainWallpaper])
-          }
+          onClicked: root.useAsWallpaper()
         }
       }
     }
